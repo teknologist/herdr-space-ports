@@ -31,13 +31,15 @@ export class PortScanner {
 
   async pidOf(t) {
     if (typeof t.pid === 'number') return t.pid;
-    if (this.pids[t.address] !== undefined) return this.pids[t.address];
+    if (this.pids[t.address]) return this.pids[t.address];
     const r = await hc(['get', t.address, '--json']).catch(() => null);
     let pid = null;
     try {
       pid = JSON.parse(r?.stdout ?? '').pid ?? null;
     } catch {}
-    this.pids[t.address] = pid;
+    // Cache only a real pid: a failed lookup (core still starting, machine
+    // reconnecting) must be retried on the next scan, not remembered.
+    if (pid) this.pids[t.address] = pid;
     return pid;
   }
 
