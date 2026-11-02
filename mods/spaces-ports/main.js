@@ -1,3 +1,8 @@
+// Modified from Herdr's shipped `spaces` mod 0.1.12 (Apache-2.0, see LICENSE).
+// Changes: imports ./ports.js; init() starts a PortScanner (every 5 s);
+// row() grows 18px and adds portsLine() when a space has listening ports;
+// new portList() and portsLine() (click opens/forwards, right-click stops).
+
 // Workspace spaces: stable colored avatars, worktrees under their checkout,
 // grouped by machine when more than one is known. After a space's name, the repo
 // its first terminal is in now, only where unusual: branch, ahead/behind. Agent state lives in the agents list, not here. Click to
