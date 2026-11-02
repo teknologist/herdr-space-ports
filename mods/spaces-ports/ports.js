@@ -5,7 +5,7 @@
 import { terminals, exec, hc, notify } from 'herdr';
 
 // Prints "L <port> <pid>" for each listening socket the user may see, then
-// "P <pid> <ppid>" for every process. Linux uses ss, macOS lsof.
+// "P <pid> <ppid> <tty>" for every process. Linux uses ss, macOS lsof.
 const SCAN = `
 if command -v ss >/dev/null 2>&1; then
   ss -ltnpH 2>/dev/null | awk '{n=split($4,a,":"); port=a[n]; s=$0;
@@ -13,7 +13,7 @@ if command -v ss >/dev/null 2>&1; then
 else
   lsof -nP -iTCP -sTCP:LISTEN -Fpn 2>/dev/null | awk '/^p/{pid=substr($0,2)} /^n/{n=split($0,a,":"); print "L", a[n], pid}'
 fi
-ps -eo pid=,ppid= | awk '{print "P", $1, $2}'
+ps -eo pid=,ppid=,tty= | awk '{print "P", $1, $2, $3}'
 `;
 
 export const FORWARD_LABEL = 'ports.forward';
@@ -79,10 +79,14 @@ export class PortScanner {
           );
           if (!r) return;
           const parent = new Map();
+          const tty = new Set(); // pids attached to a terminal
           const listens = [];
           for (const line of r.stdout.split('\n')) {
-            const [k, a, b] = line.trim().split(/\s+/);
-            if (k === 'P') parent.set(Number(a), Number(b));
+            const [k, a, b, c] = line.trim().split(/\s+/);
+            if (k === 'P') {
+              parent.set(Number(a), Number(b));
+              if (c && !/^\?+$/.test(c)) tty.add(Number(a)); // "?" / "??": none
+            }
             else if (k === 'L' && Number(a) > 0)
               listens.push([Number(a), Number(b)]);
           }
@@ -100,10 +104,17 @@ export class PortScanner {
             }
           }
           // The rest: ports of the user's processes (the scan only sees
-          // those) outside the ephemeral range, not started from a space.
+          // those) outside the ephemeral range, not started from a space,
+          // whose process or an ancestor runs in a terminal. That leaves out
+          // desktop apps and system agents, which have none.
+          const fromTerminal = (pid) => {
+            for (let p = pid, hops = 0; p > 1 && hops < 64; hops++, p = parent.get(p))
+              if (tty.has(p)) return true;
+            return false;
+          };
           const other = new Set();
-          for (const [port] of listens)
-            if (!owned.has(port) && port < 32768 && !(machine === null && forwarded.has(port)))
+          for (const [port, pid] of listens)
+            if (!owned.has(port) && port < 32768 && !(machine === null && forwarded.has(port)) && fromTerminal(pid))
               other.add(port);
           if (other.size) nextMachine[machine ?? ''] = [...other].sort((a, b) => a - b);
         })
