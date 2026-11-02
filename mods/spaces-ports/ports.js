@@ -26,7 +26,7 @@ export class PortScanner {
   constructor() {
     this.pids = {}; // terminal address -> shell pid
     this.bySpace = {}; // space id -> sorted ports
-    this.busy = false;
+    this.busy = 0; // when the running scan started (0: none)
   }
 
   async pidOf(t) {
@@ -45,8 +45,10 @@ export class PortScanner {
 
   // Resolves to true when anything changed.
   async scan() {
-    if (this.busy) return false;
-    this.busy = true;
+    // A scan started while this copy was being created can hang for good
+    // (its exec never answers), so a scan older than 20 s no longer blocks.
+    if (this.busy && Date.now() - this.busy < 20000) return false;
+    const started = (this.busy = Date.now());
     try {
       // machine -> Map(shell pid -> space id)
       const roots = new Map();
@@ -102,7 +104,7 @@ export class PortScanner {
       this.bySpace = out;
       return changed;
     } finally {
-      this.busy = false;
+      if (this.busy === started) this.busy = 0;
     }
   }
 }

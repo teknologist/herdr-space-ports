@@ -62,6 +62,11 @@ on another machine it first starts an `ssh -L` forward to this computer.
 ## Watch out
 
 - It runs programs: one `sh` per machine every 5 s, plus `ssh` on click.
+- Don't scan from `init`. When the layout switches a block to this mod, an
+  `exec` started while the new copy is being created never answers; a
+  "scan running" flag then blocks every later scan and no ports ever show.
+  Start scanning from `cx.timer.every(5000, ...)` only, and treat a scan
+  older than 20 s as dead.
 - `ControlMaster=no` / `ControlPath=none` are required when `~/.ssh/config`
   multiplexes. Without them ssh hands the listener to a detached master, the
   terminal ends at once, and the forward can't be found or stopped.

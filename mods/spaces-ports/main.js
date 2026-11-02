@@ -76,7 +76,7 @@ export default class Spaces extends View {
     // Listening ports per space (see ports.js): a few processes per machine.
     this.ports = new PortScanner();
     const scan = (cx) => cx.spawn(async (cx) => { if (await this.ports.scan().catch(() => false)) cx.notify(); });
-    scan(cx);
+    // No scan here: one started while this copy is being created can hang.
     cx.timer.every(5000, scan);
     // `git status` walks the whole tree, on another machine a process there:
     // only when its answer could have changed (see `due`).
