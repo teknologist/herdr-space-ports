@@ -1,8 +1,10 @@
 // Modified from Herdr's shipped `spaces` mod 0.1.12 (Apache-2.0, see LICENSE).
 // Changes: imports ./ports.js; init() starts a PortScanner (every 5 s);
 // row() grows 18px and adds portsLine() when a space has listening ports;
-// new portList(), otherPorts(), hasPorts() and portsLine() (click
-// opens/forwards, right-click stops; the machine's other ports follow, faded).
+// new portList(), otherPorts(), hasPorts(), portsLine(), portChip() and
+// popupView() (click opens/forwards, right-click stops; the machine's other
+// ports follow, faded; what doesn't fit goes behind a "+N" popup). init() and
+// render() show only popupView() when opened as that popup.
 
 // Workspace spaces: stable colored avatars, worktrees under their checkout,
 // grouped by machine when more than one is known. After a space's name, the repo
@@ -12,7 +14,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { PortScanner, forwards, openPort, stopForward } from "./ports.js";
-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { spaces, machines, panes, run, openOverlay, closeOverlay, props, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -54,6 +56,11 @@ export function tone(t, status) {
 
 export default class Spaces extends View {
   init(_props, cx) {
+    // Opened by a space's "+N" chip as a popup: list those ports, nothing else.
+    if (props()?.ports) {
+      this.popup = props().ports;
+      return;
+    }
     this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
     this.checked = {}; // where() -> when it was last looked at
     this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
@@ -424,29 +431,75 @@ export default class Spaces extends View {
     return this.portList(w).length > 0 || this.otherPorts(w).length > 0;
   }
 
-  // A globe, then each port: click opens it (forwarding a remote one first),
-  // right-click stops its forward. Forwarded ports show in the accent color.
+  // A globe, then the space's own ports, a dot and the machine's other ports
+  // (faded). What doesn't fit the sidebar's width goes behind a "+N" chip
+  // that lists it in a popup; the space's own ports are never hidden.
   portsLine(w, tree, t) {
     const machine = w.machine ?? null;
-    const live = forwards();
     const target = this.machines.find((m) => m.name === machine)?.target;
+    const items = [...this.portList(w).map((port) => [port, false]), ...this.otherPorts(w).map((port) => [port, true])];
+    // Text is 11.5px: about 5.8px a character, plus each chip's padding and gap.
+    const chip = (port) => (String(port).length + 1) * 5.8 + 4 + 6;
+    let room = (this.width ?? 260) - (tree ? 22 : 27) - 10 - 22;
+    const all = items.reduce((n, [port, other], i) => n + chip(port) + (other && i > 0 && !items[i - 1][1] ? 12 : 0), 0);
+    let shown = items;
+    if (all > room) {
+      room -= 34; // the "+N" chip
+      shown = [];
+      for (const [i, [port, other]] of items.entries()) {
+        const need = chip(port) + (other && i > 0 && !items[i - 1][1] ? 12 : 0);
+        if (other && need > room) break;
+        room -= need;
+        shown.push(items[i]);
+      }
+    }
+    const hidden = items.slice(shown.length);
+    const live = forwards();
     return h_flex().gap(6).items_center().pl(tree ? 22 : 27).text_size(11.5).text_color(t.dim).overflow_hidden()
-      .child(div().flex_none().child("\u{1F310}\uFE0E"))
-      .children([...this.portList(w).map((port) => [port, false]), ...this.otherPorts(w).map((port) => [port, true])].flatMap(([port, other], i, all) => {
-        const f = machine ? live[`${machine}:${port}`] : null;
-        const el = div().id(`port-${w.id}-${port}`).flex_none().rounded(4).px(2)
-          .text_color(f ? t.accent : t.dim)
-          .hover((s) => s.bg(t.hover).text_color(t.foreground))
-          .tooltip(machine ? (f ? `Forwarded to localhost:${f.local} \u2014 click to open, right-click to stop` : `Forward ${machine}:${port} and open`) : `Open localhost:${port}`)
+      .child(div().flex_none().child("\u{1F310}︎"))
+      .children(shown.flatMap(([port, other], i) => {
+        const el = this.portChip(`port-${w.id}-${port}`, machine, port, other, target, live, t);
+        const first = other && i > 0 && !shown[i - 1][1];
+        return first ? [div().id(`port-sep-${w.id}`).flex_none().child("·"), el] : [el];
+      }))
+      .when(hidden.length > 0, (el) => el.child(
+        div().id(`port-more-${w.id}`).flex_none().rounded(4).px(4).bg(t.hover).text_color(t.foreground)
+          .hover((s) => s.bg(t.selected))
+          .tooltip(hidden.map(([p]) => `:${p}`).join(" "))
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-          .on_mouse_up("left", (_e, cx) => { cx.stop_propagation(); cx.spawn(async (cx) => { await openPort(machine, port, target); cx.notify(); }); })
-          .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); if (f) cx.spawn(async (cx) => { await stopForward(machine, port); cx.notify(); }); })
-          .when(other && !f, (el) => el.opacity(0.6))
-          .child(f && f.local !== port ? `:${port}\u2192${f.local}` : `:${port}`);
-        // A dot between the space's own ports and the machine's others.
-        const first = other && i > 0 && !all[i - 1][1];
-        return first ? [div().id(`port-sep-${w.id}`).flex_none().child("\u00B7"), el] : [el];
-      }));
+          .on_mouse_up("left", (_e, cx) => {
+            cx.stop_propagation();
+            openOverlay({ mod: "spaces-ports", kind: "popup", width: 190, height: Math.min(16 + 28 * hidden.length, 340),
+              props: { ports: { machine, target, items: hidden } } });
+          })
+          .child(`+${hidden.length}`)));
+  }
+
+  // One port: click opens it (forwarding a remote one first), right-click
+  // stops its forward. Forwarded ports show in the accent color.
+  portChip(id, machine, port, other, target, live, t, after) {
+    const f = machine ? live[`${machine}:${port}`] : null;
+    return div().id(id).flex_none().rounded(4).px(2)
+      .text_color(f ? t.accent : t.dim)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .tooltip(machine ? (f ? `Forwarded to localhost:${f.local} — click to open, right-click to stop` : `Forward ${machine}:${port} and open`) : `Open localhost:${port}`)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_mouse_up("left", (_e, cx) => { cx.stop_propagation(); after?.(); cx.spawn(async (cx) => { await openPort(machine, port, target); cx.notify(); }); })
+      .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); if (f) { after?.(); cx.spawn(async (cx) => { await stopForward(machine, port); cx.notify(); }); } })
+      .when(other && !f, (el) => el.opacity(0.6))
+      .child(f && f.local !== port ? `:${port}→${f.local}` : `:${port}`);
+  }
+
+  // The "+N" popup: one port a row, same clicks; it closes after one.
+  popupView(t) {
+    const { machine, target, items } = this.popup;
+    const live = forwards();
+    const close = () => closeOverlay(props().overlay);
+    return v_flex().id("ports-popup").size_full().p(6).gap(2).bg(t.popover).text_size(12.5).overflow_y_scroll()
+      .children(items.map(([port, other]) =>
+        h_flex().h(24).px(6).items_center().justify_between()
+          .child(this.portChip(`popup-${port}`, machine, port, other, target, live, t, close))
+          .child(div().text_size(11).text_color(t.dim).child(machine ?? "here"))));
   }
 
   compact({ w, i }, t) {
@@ -464,6 +517,7 @@ export default class Spaces extends View {
   }
 
   render() {
+    if (this.popup) return this.popupView(theme());
     const t = theme();
     const collapsed = narrow();
     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
@@ -478,7 +532,8 @@ export default class Spaces extends View {
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
-    return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
+    return v_flex().id("spaces-root").on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
+      .size_full().min_h(0).bg(t.chrome).text_size(13)
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(!collapsed, el => el.child("Spaces"))
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))

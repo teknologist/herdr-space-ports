@@ -6,6 +6,7 @@ A spaces list for the [Herdr](https://herdr.dev) desktop app that shows, under e
 
 - **Ports under each space.** A port belongs to a space when the process listening on it was started from one of that space's terminals. Ports appear within about 5 seconds and disappear when the server stops.
 - **Then the machine's other ports.** After a dot, faded, come the other ports your user is listening on on that machine (below 32768), when the process runs from a terminal, even one that isn't a space's. Desktop apps and system agents, which have no terminal, stay out. They open and forward the same way.
+- **Too many to fit?** The space's own ports always show. The machine's other ports fill the rest of the line, and whatever doesn't fit goes behind a `+N` chip that lists them in a popup, where they open, forward and stop the same way.
 - **Local spaces.** Clicking a port opens `http://localhost:<port>/`.
 - **Spaces on other machines.** Clicking a port starts an `ssh -L` forward to the same port on this computer and opens it. If that port is taken here, a free one is used and the label reads `:remote→local`. A forwarded port is shown in the accent color.
 - **Stop a forward.** Right-click a forwarded port.

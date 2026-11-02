@@ -58,6 +58,13 @@ on another machine it first starts an `ssh -L` forward to this computer.
   `?`/`??`), minus the local ends of this mod's forwards, goes to
   `byMachine[machine ?? ""]`. `portsLine` draws the space's own ports, then
   a `·`, then those at opacity 0.6; they click like the others.
+- Overflow: the root reports its width (`on_size_change`); `portsLine`
+  estimates each chip at `(digits + 1) * 5.8 + 10` px and, if the line
+  doesn't fit, keeps every own port and as many others as fit, then a `+N`
+  chip. Its click opens this same mod as a popup:
+  `openOverlay({ mod: "spaces-ports", kind: "popup", props: { ports: { machine, target, items } } })`.
+  `init` sees `props().ports`, starts nothing (no scanner, no timers), and
+  `render` draws only `popupView()`: one row a port, same chip, closes after a click.
 - Space ids: a local space is its `herdr.space` label. A remote one is
   `<machine>/<label>`, and its terminal addresses look like `<machine>/t3`.
 - The shell pid comes from `terminals()[i].pid`, or `hc get <address> --json`
