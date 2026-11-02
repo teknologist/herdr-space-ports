@@ -26,6 +26,8 @@ export class PortScanner {
   constructor() {
     this.pids = {}; // terminal address -> shell pid
     this.bySpace = {}; // space id -> sorted ports
+    // machine ("" here) -> the user's other listening ports below 32768
+    this.byMachine = {};
     this.busy = 0; // when the running scan started (0: none)
   }
 
@@ -67,6 +69,9 @@ export class PortScanner {
         if (!live.has(a)) delete this.pids[a];
 
       const next = {};
+      const nextMachine = {};
+      // Local ends of this mod's forwards aren't servers of this machine.
+      const forwarded = new Set(Object.values(forwards()).map((f) => f.local));
       await Promise.all(
         [...roots].map(async ([machine, shells]) => {
           const r = await exec('sh', ['-c', SCAN], { on: machine }).catch(
@@ -81,17 +86,26 @@ export class PortScanner {
             else if (k === 'L' && Number(a) > 0)
               listens.push([Number(a), Number(b)]);
           }
+          const owned = new Set();
           for (const [port, pid] of listens) {
             let p = pid;
             for (let hops = 0; p > 1 && hops < 64; hops++) {
               const space = shells.get(p);
               if (space) {
                 (next[space] ??= new Set()).add(port);
+                owned.add(port);
                 break;
               }
               p = parent.get(p);
             }
           }
+          // The rest: ports of the user's processes (the scan only sees
+          // those) outside the ephemeral range, not started from a space.
+          const other = new Set();
+          for (const [port] of listens)
+            if (!owned.has(port) && port < 32768 && !(machine === null && forwarded.has(port)))
+              other.add(port);
+          if (other.size) nextMachine[machine ?? ''] = [...other].sort((a, b) => a - b);
         })
       );
       const out = Object.fromEntries(
@@ -100,8 +114,11 @@ export class PortScanner {
           [...set].sort((a, b) => a - b),
         ])
       );
-      const changed = JSON.stringify(out) !== JSON.stringify(this.bySpace);
+      const changed =
+        JSON.stringify([out, nextMachine]) !==
+        JSON.stringify([this.bySpace, this.byMachine]);
       this.bySpace = out;
+      this.byMachine = nextMachine;
       return changed;
     } finally {
       if (this.busy === started) this.busy = 0;

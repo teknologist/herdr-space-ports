@@ -1,7 +1,8 @@
 // Modified from Herdr's shipped `spaces` mod 0.1.12 (Apache-2.0, see LICENSE).
 // Changes: imports ./ports.js; init() starts a PortScanner (every 5 s);
 // row() grows 18px and adds portsLine() when a space has listening ports;
-// new portList() and portsLine() (click opens/forwards, right-click stops).
+// new portList(), otherPorts(), hasPorts() and portsLine() (click
+// opens/forwards, right-click stops; the machine's other ports follow, faded).
 
 // Workspace spaces: stable colored avatars, worktrees under their checkout,
 // grouped by machine when more than one is known. After a space's name, the repo
@@ -363,7 +364,7 @@ export default class Spaces extends View {
       .relative()
       .id(`space-${w.id}`)
       .px(8)
-      .h(rowHeight({ tree }) + (this.portList(w).length ? 18 : 0))
+      .h(rowHeight({ tree }) + (this.hasPorts(w) ? 18 : 0))
       .flex_none()
       .justify_center()
       .rounded(8)
@@ -406,11 +407,21 @@ export default class Spaces extends View {
           .child(div().flex_shrink(0).max_w(150).truncate().text_color(t.foreground).child(w.name))
           .child(g ? this.gitTail(g, tree, w.name, t) : div().flex_1()),
       )
-      .when(this.portList(w).length > 0, (el) => el.child(this.portsLine(w, tree, t)));
+      .when(this.hasPorts(w), (el) => el.child(this.portsLine(w, tree, t)));
   }
 
   portList(w) {
     return this.ports?.bySpace[w.id] ?? [];
+  }
+
+  // The space's machine's other listening ports (not started from a space).
+  otherPorts(w) {
+    const own = new Set(this.portList(w));
+    return (this.ports?.byMachine[w.machine ?? ''] ?? []).filter((p) => !own.has(p));
+  }
+
+  hasPorts(w) {
+    return this.portList(w).length > 0 || this.otherPorts(w).length > 0;
   }
 
   // A globe, then each port: click opens it (forwarding a remote one first),
@@ -421,16 +432,20 @@ export default class Spaces extends View {
     const target = this.machines.find((m) => m.name === machine)?.target;
     return h_flex().gap(6).items_center().pl(tree ? 22 : 27).text_size(11.5).text_color(t.dim).overflow_hidden()
       .child(div().flex_none().child("\u{1F310}\uFE0E"))
-      .children(this.portList(w).map((port) => {
+      .children([...this.portList(w).map((port) => [port, false]), ...this.otherPorts(w).map((port) => [port, true])].flatMap(([port, other], i, all) => {
         const f = machine ? live[`${machine}:${port}`] : null;
-        return div().id(`port-${w.id}-${port}`).flex_none().rounded(4).px(2)
+        const el = div().id(`port-${w.id}-${port}`).flex_none().rounded(4).px(2)
           .text_color(f ? t.accent : t.dim)
           .hover((s) => s.bg(t.hover).text_color(t.foreground))
           .tooltip(machine ? (f ? `Forwarded to localhost:${f.local} \u2014 click to open, right-click to stop` : `Forward ${machine}:${port} and open`) : `Open localhost:${port}`)
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .on_mouse_up("left", (_e, cx) => { cx.stop_propagation(); cx.spawn(async (cx) => { await openPort(machine, port, target); cx.notify(); }); })
           .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); if (f) cx.spawn(async (cx) => { await stopForward(machine, port); cx.notify(); }); })
+          .when(other && !f, (el) => el.opacity(0.6))
           .child(f && f.local !== port ? `:${port}\u2192${f.local}` : `:${port}`);
+        // A dot between the space's own ports and the machine's others.
+        const first = other && i > 0 && !all[i - 1][1];
+        return first ? [div().id(`port-sep-${w.id}`).flex_none().child("\u00B7"), el] : [el];
       }));
   }
 

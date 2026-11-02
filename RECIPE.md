@@ -52,7 +52,11 @@ on another machine it first starts an `ssh -L` forward to this computer.
 - `main.js` edits to the clone: import `ports.js`; in `init`, create the
   scanner and scan every 5000 ms with `cx.timer.every` (not once from init); in `row()`, add
   18px when there are ports and append `portsLine(w, tree, t)`; add
-  `portList(w)` and `portsLine(...)`.
+  `portList(w)`, `otherPorts(w)`, `hasPorts(w)` and `portsLine(...)`.
+- Other ports: every listener the scan saw on a machine that no space owns,
+  below 32768, minus the local ends of this mod's forwards, goes to
+  `byMachine[machine ?? ""]`. `portsLine` draws the space's own ports, then
+  a `·`, then those at opacity 0.6; they click like the others.
 - Space ids: a local space is its `herdr.space` label. A remote one is
   `<machine>/<label>`, and its terminal addresses look like `<machine>/t3`.
 - The shell pid comes from `terminals()[i].pid`, or `hc get <address> --json`
