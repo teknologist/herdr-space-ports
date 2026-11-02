@@ -50,7 +50,7 @@ on another machine it first starts an `ssh -L` forward to this computer.
   `forwards()`, `openPort(machine, port, target)`, `stopForward(machine, port)`.
   Uses `terminals`, `exec`, `hc`, `notify` from `herdr`.
 - `main.js` edits to the clone: import `ports.js`; in `init`, create the
-  scanner, scan once and every 5000 ms with `cx.timer.every`; in `row()`, add
+  scanner and scan every 5000 ms with `cx.timer.every` (not once from init); in `row()`, add
   18px when there are ports and append `portsLine(w, tree, t)`; add
   `portList(w)` and `portsLine(...)`.
 - Space ids: a local space is its `herdr.space` label. A remote one is
