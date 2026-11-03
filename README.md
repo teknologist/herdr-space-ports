@@ -13,6 +13,8 @@ A spaces list for the [Herdr](https://herdr.dev) desktop app that shows, under e
 - **Forwards outlive the window.** Each forward is a herdr-core terminal labelled `ports.forward=<machine>:<port>=<local>`, so it keeps running when the app closes or updates, and the mod finds it again on the next start.
 - **Everything the spaces list already does.** It's Herdr's own `spaces` mod (0.1.12) with ports added: worktrees under their repo, branch and ahead/behind, a group per machine, colors, and the right-click menu.
 
+- **Works with a Rex panel.** If your layout also has the `rex-bridge` block, Rex servers and their spaces stay in that panel and aren't listed here a second time.
+
 ## Install
 
 Ask your agent:

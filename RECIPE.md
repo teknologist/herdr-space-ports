@@ -71,6 +71,13 @@ on another machine it first starts an `ssh -L` forward to this computer.
   when it is missing.
 - Programs run: `sh`, `ss` or `lsof`, `ps`, `awk`, `ssh`, `open`, `sleep`.
 
+## Rex servers
+
+- When the active layout has a block with `"mod": "rex-bridge"`, leave out
+  machines with `via: true` and an id starting `rex-` (from `hc machine ls
+  --json`), both as machine groups and their spaces: that block lists them.
+  Check `layout()` each render, so removing the block brings them back.
+
 ## Watch out
 
 - It runs programs: one `sh` per machine every 5 s, plus `ssh` on click.

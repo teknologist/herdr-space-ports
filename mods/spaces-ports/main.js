@@ -4,7 +4,8 @@
 // new portList(), otherPorts(), hasPorts(), portsLine(), portChip() and
 // popupView() (click opens/forwards, right-click stops; the machine's other
 // ports follow, faded; what doesn't fit goes behind a "+N" popup). init() and
-// render() show only popupView() when opened as that popup.
+// render() show only popupView() when opened as that popup. Rex servers are
+// left out when the layout has a rex-bridge block (elsewhere()).
 
 // Workspace spaces: stable colored avatars, worktrees under their checkout,
 // grouped by machine when more than one is known. After a space's name, the repo
@@ -27,6 +28,13 @@ function find(node, id) {
 
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+
+// Machines the layout lists in a panel of their own: the rex-bridge mod shows
+// Rex servers (machines it connects through, ids "rex-...") in its own block,
+// so when that block is in the layout they and their spaces are left out here
+// instead of showing twice. Without that block they show like any machine.
+const hasMod = (node, mod) => node?.content?.mod === mod || (node?.children ?? []).some((c) => hasMod(c, mod));
+const rexMachine = (m) => m.via && String(m.id ?? "").startsWith("rex-");
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 // `ps`: panes(), read once by the caller (each read copies every pane).
@@ -142,7 +150,7 @@ export default class Spaces extends View {
 
   refreshMachines(cx) {
     cx.spawn(async cx => {
-      try { const r = await hc(["machine", "ls", "--json"]); if (r.code === 0) this.machines = (JSON.parse(r.stdout).machines ?? []).filter((m) => !m.temporary); } catch {}
+      try { const r = await hc(["machine", "ls", "--json"]); if (r.code === 0) { const all = (JSON.parse(r.stdout).machines ?? []).filter((m) => !m.temporary); this.rex = new Set(all.filter(rexMachine).map((m) => m.name)); this.machines = all; } } catch {}
       cx.notify();
     });
   }
@@ -269,12 +277,18 @@ export default class Spaces extends View {
     openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: w.id } } });
   }
 
+  // Machine names another block of the layout lists (see rexMachine).
+  elsewhere() {
+    return this.rex?.size && hasMod(layout(), "rex-bridge") ? this.rex : new Set();
+  }
+
   // Spaces in order, each worktree space moved under its main checkout's.
   ordered() {
     const sp = spaces(), ps = panes();
     const ready = (w) => this.shown.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
-    const list = sp.map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null })).filter((r) => this.shown.has(r.w.id));
+    const elsewhere = this.elsewhere();
+    const list = sp.map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null })).filter((r) => this.shown.has(r.w.id) && !elsewhere.has(r.w.machine));
     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
     const nested = (r) => r.g?.linked && mains.has(r.g.repo);
     const out = [];
@@ -294,7 +308,8 @@ export default class Spaces extends View {
   grouped(t, collapsed) {
     const rows = this.ordered();
     const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
-    const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
+    const elsewhere = this.elsewhere();
+    const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].filter((m) => !elsewhere.has(m)).sort();
     const loading = m => {
       const layout = machines().find(k => k.name === m)?.layout;
       return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
